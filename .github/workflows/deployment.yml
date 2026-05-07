@@ -120,13 +120,18 @@ jobs:
 
       - name: Patch shopify.app.toml with resolved client_id
         working-directory: ./${{ matrix.package }}
+        env:
+          CLIENT_ID: ${{ steps.read-client-id.outputs.client-id }}
         run: |
           if [ ! -f shopify.app.toml ]; then
             echo "shopify.app.toml not found in ${{ matrix.package }}"
             exit 1
           fi
-          sed -i -E "s|^client_id = .*|client_id = \"${{ steps.read-client-id.outputs.client-id }}\"|" shopify.app.toml
-          grep -E '^client_id' shopify.app.toml
+          sed -i -E "s|^[[:space:]]*client_id[[:space:]]*=.*|client_id = \"$CLIENT_ID\"|" shopify.app.toml
+          if ! grep -qE "^client_id = \"$CLIENT_ID\"\$" shopify.app.toml; then
+            echo "Failed to patch client_id in shopify.app.toml"
+            exit 1
+          fi
 
       - name: Check for extensions directory
         id: check-extensions
