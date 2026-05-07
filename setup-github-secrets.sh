@@ -8,21 +8,15 @@
 set -euo pipefail
 
 PACKAGES=(
-    "conversion-pixel"
-    "facebook-pixel"
-    "remarketing-pixel"
-    "nabu-redirect-manager"
-    "nabu-redirect-manager-gamma"
-    "tiktok-pixel"
-    "tiktok-pixel-gamma"
-    "nabu-for-google-feed"
-    "nabu-for-facebook-feed"
-    "gamma-app-gsf"
-    "gamma-app-fb-feed"
-    "gamma-sitemap"
-    "nabu-sitemap"
-    "nabu-image-optimizer"
-    "gamma-nabu-image-optimizer"
+    "dev-test-app-kanna-fb-feed"
+    "dev-test-app-kanna-fb-pixel"
+    "dev-test-app-kanna-gcp"
+    "dev-test-app-kanna-grp"
+    "dev-test-app-kanna-gsf"
+    "dev-test-app-kanna-rm"
+    "dev-test-app-kanna-sitemap"
+    "dev-test-app-kanna-tik-tok"
+    "khyathi-sitemap"
 )
 
 extract_client_id() {
@@ -47,4 +41,5 @@ done
 
 echo "Setting SHOPIFY_CLIENT_IDS with ${#PACKAGES[@]} entries..."
 gh secret set SHOPIFY_CLIENT_IDS --body "$json"
+# echo "$json" | jq
 echo "Done."
