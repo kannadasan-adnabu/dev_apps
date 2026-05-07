@@ -1,0 +1,168 @@
+name: Deploy Shopify Extensions
+
+#TODO: Add gamma paths for GCP, GRP, FBP once we get access to lax mode for gamma
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'conversion-pixel/**'
+      - 'facebook-pixel/**'
+      - 'remarketing-pixel/**'
+      - 'nabu-redirect-manager/**'
+      - 'nabu-redirect-manager-gamma/**'
+      - 'tiktok-pixel/**'
+      - 'tiktok-pixel-gamma/**'
+      - 'nabu-for-google-feed/**'
+      - 'nabu-for-facebook-feed/**'
+      - 'gamma-app-gsf/**'
+      - 'gamma-app-fb-feed/**'
+      - 'gamma-sitemap/**'
+      - 'nabu-sitemap/**'
+      - 'nabu-image-optimizer/**'
+      - 'gamma-nabu-image-optimizer/**'
+      - 'nabu-schema-pro/**'
+      - 'gamma-app-schema-pro/**'
+
+env:
+  SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+  SHOPIFY_CLI_PARTNERS_TOKEN_GAMMA: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN_GAMMA }}
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed-packages: ${{ steps.changes.outputs.changed-packages }}
+      has-changes: ${{ steps.changes.outputs.has-changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed packages
+        id: changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          CHANGED_PACKAGES=()
+
+          PACKAGES=(
+            "conversion-pixel"
+            "facebook-pixel"
+            "remarketing-pixel"
+            "nabu-redirect-manager"
+            "nabu-redirect-manager-gamma"
+            "tiktok-pixel"
+            "tiktok-pixel-gamma"
+            "nabu-for-google-feed"
+            "nabu-for-facebook-feed"
+            "gamma-app-gsf"
+            "gamma-app-fb-feed"
+            "gamma-sitemap"
+            "nabu-sitemap"
+            "nabu-image-optimizer"
+            "gamma-nabu-image-optimizer"
+            "nabu-schema-pro"
+            "gamma-app-schema-pro"
+          )
+
+          for package in "${PACKAGES[@]}"; do
+            if echo "$CHANGED_FILES" | grep -q "^${package}/"; then
+              echo "Changes detected in: $package"
+              CHANGED_PACKAGES+=("$package")
+            fi
+          done
+
+          if [ ${#CHANGED_PACKAGES[@]} -eq 0 ]; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "changed-packages=[]" >> $GITHUB_OUTPUT
+          else
+            PACKAGES_JSON=$(printf '%s\n' "${CHANGED_PACKAGES[@]}" | jq -R . | jq -cs .)
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            printf "changed-packages=%s\n" "$PACKAGES_JSON" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.10.x'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+
+      - name: Install Shopify CLI
+        run: npm install -g @shopify/cli@latest
+
+      - name: Install package dependencies
+        working-directory: ./${{ matrix.package }}
+        run: npm ci
+
+      - name: Determine Partners Token
+        id: determine
+        run: |
+          if [[ "${{ matrix.package }}" == *gamma* ]]; then
+            echo "partners-token=${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN_GAMMA }}" >> $GITHUB_OUTPUT
+            echo "app-type=gamma" >> $GITHUB_OUTPUT
+          else
+            echo "partners-token=${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}" >> $GITHUB_OUTPUT
+            echo "app-type=production" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Resolve client_id from secret
+        id: read-client-id
+        env:
+          CLIENT_IDS: ${{ secrets.SHOPIFY_CLIENT_IDS }}
+        run: |
+          if [ -z "$CLIENT_IDS" ]; then
+            echo "SHOPIFY_CLIENT_IDS secret is not set"
+            exit 1
+          fi
+          CLIENT_ID=$(echo "$CLIENT_IDS" | jq -er --arg p "${{ matrix.package }}" '.[$p]')
+          echo "client-id=$CLIENT_ID" >> $GITHUB_OUTPUT
+          echo "Resolved client_id for ${{ matrix.package }}"
+
+      - name: Patch shopify.app.toml with resolved client_id
+        working-directory: ./${{ matrix.package }}
+        run: |
+          if [ ! -f shopify.app.toml ]; then
+            echo "shopify.app.toml not found in ${{ matrix.package }}"
+            exit 1
+          fi
+          sed -i -E "s|^client_id = .*|client_id = \"${{ steps.read-client-id.outputs.client-id }}\"|" shopify.app.toml
+          grep -E '^client_id' shopify.app.toml
+
+      - name: Check for extensions directory
+        id: check-extensions
+        working-directory: ./${{ matrix.package }}
+        run: |
+          if [ -d "extensions" ]; then
+            echo "has-extensions=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-extensions=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to Shopify (no release on PRs)
+        if: steps.check-extensions.outputs.has-extensions == 'true'
+        working-directory: ./${{ matrix.package }}
+        env:
+          # Auth & app identity
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ steps.determine.outputs.partners-token }}
+          SHOPIFY_API_KEY: ${{ steps.read-client-id.outputs.client-id }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          shopify app deploy \
+            -f \
+            --source-control-url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"

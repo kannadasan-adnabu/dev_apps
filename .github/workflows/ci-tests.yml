@@ -1,0 +1,214 @@
+name: CI Tests and Coverage
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Continue testing other packages even if one fails
+      matrix:
+        package_dir: 
+          - conversion-pixel
+          - facebook-pixel
+          - remarketing-pixel
+          - nabu-redirect-manager
+          - nabu-redirect-manager-gamma
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        # Caching npm dependencies globally for the runner
+        # cache: 'npm' 
+        # cache-dependency-path: '**/package-lock.json' # Cache based on all package-lock.json files
+
+    - name: Generate/Update package-lock.json for ${{ matrix.package_dir }}
+      working-directory: ./${{ matrix.package_dir }}
+      run: npm install --package-lock-only
+
+    - name: Install dependencies for ${{ matrix.package_dir }}
+      working-directory: ./${{ matrix.package_dir }}
+      run: npm ci
+      
+    - name: Run tests with coverage for ${{ matrix.package_dir }}
+      working-directory: ./${{ matrix.package_dir }}
+      run: npm run test:coverage
+    
+    - name: Upload HTML coverage report for ${{ matrix.package_dir }} # Renamed for clarity
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-html-report-${{ matrix.package_dir }} # Changed artifact name
+        path: ./${{ matrix.package_dir }}/coverage/
+        if-no-files-found: warn
+
+    - name: Upload coverage summary JSON for ${{ matrix.package_dir }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: raw-coverage-summary-${{ matrix.package_dir }} # Specific name for the JSON summary artifact
+        path: ./${{ matrix.package_dir }}/coverage/coverage-summary.json # Path to the single JSON file
+        if-no-files-found: ignore # If summary.json is missing, this package won't contribute to average
+
+    # The individual coverage summary generation per package is tricky to aggregate
+    # into a single PR comment easily without more complex scripting or dedicated actions.
+    # For now, we'll skip the per-package jq parsing in the main job.
+    # The aggregated comment will point to artifacts.
+
+  check-average-coverage:
+    name: Check Average Coverage
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      average_coverage_value: ${{ steps.calculate_avg_coverage.outputs.average_coverage_value }}
+      coverage_threshold_met: ${{ steps.calculate_avg_coverage.outputs.coverage_threshold_met }}
+    env:
+      MINIMUM_AVERAGE_COVERAGE: 80 # Adjust this value as needed, or set via secrets.MIN_AVG_COVERAGE
+    steps:
+      - name: Download all raw coverage summaries
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts # Downloads all artifacts into this directory
+      
+      - name: Calculate and check average coverage
+        id: calculate_avg_coverage
+        run: |
+          TOTAL_PCT=0
+          PACKAGES_WITH_COVERAGE_COUNT=0 # Renamed for clarity
+          AVG_COVERAGE=0
+          THRESHOLD_MET="false"
+          
+          echo "Minimum average coverage threshold: ${MINIMUM_AVERAGE_COVERAGE}%"
+          echo "Looking for coverage summaries in ./downloaded-artifacts/"
+          
+          # Iterate over directories that match the artifact name pattern
+          for ARTIFACT_DIR in ./downloaded-artifacts/raw-coverage-summary-* ; do
+            # Check if it is indeed a directory (glob can return the pattern itself if no match)
+            if [ -d "$ARTIFACT_DIR" ]; then
+              PKG_NAME=$(basename "$ARTIFACT_DIR" | sed 's/raw-coverage-summary-//')
+              SUMMARY_FILE_PATH="${ARTIFACT_DIR}/coverage-summary.json"
+              
+              echo "Processing artifact directory: $ARTIFACT_DIR (Package: $PKG_NAME)"
+              echo "Checking for summary file: $SUMMARY_FILE_PATH"
+              
+              if [ -f "$SUMMARY_FILE_PATH" ]; then
+                # Ensure jq outputs 0 if path is not found or value is not a number, then validate with grep
+                LINE_PCT_RAW=$(jq -r '.total.lines.pct // 0' "$SUMMARY_FILE_PATH")
+                
+                # Validate that LINE_PCT_RAW is a number (integer or float)
+                if echo "$LINE_PCT_RAW" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+                  LINE_PCT=$LINE_PCT_RAW
+                  echo "Found line coverage $LINE_PCT% for $PKG_NAME"
+                  # Use awk for more robust float arithmetic than bc in simple additions
+                  TOTAL_PCT=$(awk -v total="$TOTAL_PCT" -v current="$LINE_PCT" 'BEGIN {print total + current}')
+                  PACKAGES_WITH_COVERAGE_COUNT=$((PACKAGES_WITH_COVERAGE_COUNT + 1))
+                else
+                  echo "Warning: Could not parse line coverage percentage for $PKG_NAME from '$LINE_PCT_RAW'. Treating as 0%."
+                  # Optionally, count this as a package with 0% coverage if you want to penalize
+                  # PACKAGES_WITH_COVERAGE_COUNT=$((PACKAGES_WITH_COVERAGE_COUNT + 1))
+                fi
+              else
+                echo "Warning: No coverage-summary.json found in $ARTIFACT_DIR for $PKG_NAME. This package will not be included in the average."
+              fi
+            else
+              echo "Note: No artifact directories found matching 'raw-coverage-summary-*'."
+              # This case handles if no coverage artifacts were uploaded at all.
+              # The loop might run once with the pattern itself if no matches.
+            fi
+          done
+
+          if [ "$PACKAGES_WITH_COVERAGE_COUNT" -gt 0 ]; then
+            # Use awk for division as well for consistency and robustness
+            AVG_COVERAGE=$(awk -v total="$TOTAL_PCT" -v count="$PACKAGES_WITH_COVERAGE_COUNT" 'BEGIN {printf "%.2f", total / count}')
+            echo "Total Packages with coverage data: $PACKAGES_WITH_COVERAGE_COUNT"
+            echo "Average line coverage: $AVG_COVERAGE%"
+          else
+            echo "Error: No valid coverage data found for any package. Setting average to 0%."
+            AVG_COVERAGE=0 
+          fi
+          
+          echo "::set-output name=average_coverage_value::$AVG_COVERAGE"
+
+          # bc is fine for comparison
+          IS_BELOW_THRESHOLD=$(echo "$AVG_COVERAGE < $MINIMUM_AVERAGE_COVERAGE" | bc -l) # Use -l for floating point comparison in bc
+
+          if [ "$IS_BELOW_THRESHOLD" -eq 1 ]; then
+            THRESHOLD_MET="false"
+            echo "::error::Average coverage $AVG_COVERAGE% is below the threshold of $MINIMUM_AVERAGE_COVERAGE%."
+          else
+            THRESHOLD_MET="true"
+            echo "Average coverage $AVG_COVERAGE% meets or exceeds the threshold of $MINIMUM_AVERAGE_COVERAGE%."
+          fi
+          echo "::set-output name=coverage_threshold_met::$THRESHOLD_MET"
+      
+      - name: Fail workflow if coverage threshold not met
+        if: steps.calculate_avg_coverage.outputs.coverage_threshold_met == 'false'
+        run: exit 1
+
+  report-overall-status: # Renamed job
+    name: Report Overall Status
+    if: github.event_name == 'pull_request' && always() # always() ensures this runs to report status
+    needs: [test, check-average-coverage] # Depends on both previous stages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Previous Comment
+        id: find_comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]' # Important: uses the bot's author name
+          body-includes: "<!-- CI_RUN_SUMMARY_COMMENT -->" # Our unique marker
+
+      - name: Create or Update Comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const testJobStatus = "${{ needs.test.result }}";
+            const coverageCheckJobStatus = "${{ needs.check-average-coverage.result }}";
+            const avgCoverage = "${{ needs.check-average-coverage.outputs.average_coverage_value }}";
+            const thresholdMet = "${{ needs.check-average-coverage.outputs.coverage_threshold_met }}";
+            const minThreshold = process.env.MINIMUM_AVERAGE_COVERAGE || "80"; // Get from env if set, else default
+            const commentMarker = "<!-- CI_RUN_SUMMARY_COMMENT -->";
+
+            let commentBody = `## CI Run Summary ${commentMarker}\n\n`; // Add marker to new comment body
+            commentBody += `- **Tests for all packages status:** ${testJobStatus === 'success' ? '✅ Passed' : (testJobStatus === 'skipped' ? '⚪ Skipped' : '❌ Failed')}\n`;
+            commentBody += `- **Average code coverage status:** ${coverageCheckJobStatus === 'success' ? '✅ Passed' : (coverageCheckJobStatus === 'skipped' ? '⚪ Skipped' : '❌ Failed')}\n`;
+            
+            if (avgCoverage && avgCoverage !== "") {
+              commentBody += `  - **Average Line Coverage:** ${avgCoverage}%\n`;
+              commentBody += `  - **Required Average Coverage:** ${minThreshold}%\n`;
+              if (thresholdMet === "true") {
+                commentBody += `  - **Result:** Meets or exceeds threshold.\n`;
+              } else {
+                commentBody += `  - **Result:** Below threshold.\n`;
+              }
+            } else {
+              commentBody += `  - Average coverage data not available.\n`;
+            }
+            
+            const existingCommentId = "${{ steps.find_comment.outputs.comment-id }}";
+
+            if (existingCommentId) {
+              console.log(`Found existing comment with ID: ${existingCommentId}. Updating it.`);
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingCommentId,
+                body: commentBody
+              });
+            } else {
+              console.log("No existing comment found. Creating a new one.");
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            } 
