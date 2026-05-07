@@ -1,0 +1,542 @@
+{% comment %}
+Dynamic Redirect Manager - Handles wildcard redirects and logging
+This block can be used on 404 pages or globally with conditional logic
+{% endcomment %}
+
+<script>
+    (function() {
+        const storageKeyMap = {
+            redirectChain: 'ADNABU_REDIRECT_CHAIN',
+            redirectLog: 'ADNABU_REDIRECT_LOG',
+            debugMode: 'ADNABU_REDIRECT_DEBUG_MODE',
+            sessionId: 'ADNABU_REDIRECT_MANAGER_SESSION_ID',
+        }
+
+        const redirectConfig = {
+            mappings: {{ shop.metafields.adnabu_redirect_manager_embed.configuration.value | json }},
+            apiEndpoint: "https://kannadasan.adnabu.net/local-development/redirect-event-relay",
+            shopId: "{{ shop.permanent_domain }}",
+            debugMode: localStorage.getItem(storageKeyMap.debugMode) || false,
+        };
+
+        // Utility functions
+        function log(message, data = null) {
+            if (redirectConfig.debugMode) {
+                console.log('[Nabu Redirect Manager]', message, data);
+            }
+        }
+        
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Session ID management functions
+        function getSessionId() {
+            let sessionId = sessionStorage.getItem(storageKeyMap.sessionId);
+            if (!sessionId) {
+                sessionId = generateUUID();
+                sessionStorage.setItem(storageKeyMap.sessionId, sessionId);
+                log('New session ID generated', sessionId);
+            }
+            return sessionId;
+        }
+    
+        function clearSessionId() {
+            sessionStorage.removeItem(storageKeyMap.sessionId);
+            log('Session ID cleared');
+        }
+
+        function sendLogs(endpoint, logData) {
+            if (!endpoint || !logData) return;
+
+            // Use sendBeacon for better reliability, especially during page unload/redirect
+            if (navigator.sendBeacon) {
+                const blob = new Blob([JSON.stringify(logData)], { type: 'application/json' });
+                const success = navigator.sendBeacon(endpoint, blob);
+                if (success) {
+                    log('Log sent successfully via sendBeacon');
+                    localStorage.removeItem(storageKeyMap.redirectLog);
+                } else {
+                    log('Failed to send log via sendBeacon');
+                }
+            } else {
+                // Fallback to XMLHttpRequest for older browsers
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", endpoint, true);
+                xhr.setRequestHeader("Content-Type", "application/json");
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) {
+                            log('Log sent successfully via XHR fallback');
+                            localStorage.removeItem(storageKeyMap.redirectLog);
+                        } else {
+                            log('Failed to send log via XHR fallback', xhr.status);
+                        }
+                    }
+                };
+                xhr.send(JSON.stringify(logData));
+            }
+        }
+    
+        function containsValidDomain(url) {
+            const regex = /^(https?:\/\/)?(www\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}/;
+            return regex.test(url);
+        }
+    
+        function patternMatchesPath(pattern, path, caseInsensitive) {
+            // Used when there is no query in the pattern 
+            let regex;
+            const isRegexPattern = pattern.startsWith('^');
+    
+            if (isRegexPattern) {
+                regex = new RegExp(pattern, caseInsensitive ? 'i' : '');
+            } else {
+                // Convert wildcard pattern to regex - make wildcards capturing groups
+                const regexPattern = '^' + pattern.replace(/\$([0-9]+)/g, '([^/]+)').replace(/\*/g, '(.*)') + '/?$';
+                regex = new RegExp(regexPattern, caseInsensitive ? 'i' : '');
+            }
+            return path.match(regex);
+        }
+    
+        function patternMatchesPathWithQuery(pattern, path, caseInsensitive) {
+            const isRegexPattern = pattern.startsWith('^');
+    
+            if (isRegexPattern) {
+                const regex = new RegExp(pattern, caseInsensitive ? 'i' : '');
+                return path.match(regex);
+            }
+    
+            // Split pattern and path into base path and query parts
+            const [patternBase, patternQuery] = pattern.split('?');
+            const [pathBase, pathQuery] = path.split('?');
+    
+            // Check base path match first
+            const baseRegex = '^' + patternBase
+                .replace(/[.+^{}()|[\]\\]/g, '\\$&')  // Escape special regex chars
+                .replace(/\$([0-9]+)/g, '([^/]+)')   // Handle $1, $2, etc. placeholders
+                .replace(/\*/g, '(.*)') + '/?$';  // Handle wildcards as capturing groups
+            
+            const baseMatch = pathBase.match(new RegExp(baseRegex, caseInsensitive ? 'i' : ''));
+            if (!baseMatch) {
+                return null;
+            }
+    
+            // If no query in pattern, but query in path, still match base path
+            if (!patternQuery) {
+                return baseMatch;
+            }
+    
+            // If pattern has query but path doesn't, no match
+            if (!pathQuery) {
+                return null;
+            }
+    
+            // Parse query parameters from both pattern and path
+            function parseQueryParams(queryString) {
+                const params = {};
+                if (!queryString) return params;
+                
+                queryString.split('&').forEach(param => {
+                    const [key, value] = param.split('=');
+                    if (key) {
+                        params[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
+                    }
+                });
+                return params;
+            }
+    
+            const patternParams = parseQueryParams(patternQuery);
+            const pathParams = parseQueryParams(pathQuery);
+    
+            // Check if all pattern query parameters match
+            for (const [key, patternValue] of Object.entries(patternParams)) {
+                const pathValue = pathParams[key];
+                
+                // If key doesn't exist in path, no match
+                if (pathValue === undefined) {
+                    return null;
+                }
+    
+                // Create regex for the parameter value (handle wildcards and placeholders)
+                let valueRegex = '^' + patternValue
+                    .replace(/[.+^{}()|[\]\\]/g, '\\$&')  // Escape special regex chars
+                    .replace(/\$([0-9]+)/g, '(.+)')     // Handle $1, $2, etc. placeholders
+                    .replace(/\*/g, '(.*)') + '$';      // Handle wildcards as capturing groups
+    
+                const valueMatch = pathValue.match(new RegExp(valueRegex, caseInsensitive ? 'i' : ''));
+                if (!valueMatch) {
+                    return null;
+                }
+    
+                // Merge any captured groups from query parameter matches
+                if (valueMatch.length > 1) {
+                    baseMatch.push(...valueMatch.slice(1));
+                }
+            }
+    
+            return baseMatch;
+        }
+    
+        function smartPatternMatch(pattern, path, caseInsensitive) {
+            // Check if either pattern or path contains query parameters
+            const patternHasQuery = pattern.includes('?');
+            const pathHasQuery = path.includes('?');
+            
+            // If either has query parameters, use the query-aware function
+            if (patternHasQuery || pathHasQuery) {
+                return patternMatchesPathWithQuery(pattern, path, caseInsensitive);
+            }
+            
+            // Otherwise, use the simpler function
+            return patternMatchesPath(pattern, path, caseInsensitive);
+        }
+
+        function getEventType(pattern) {
+            // Determine event type based on whether pattern starts with ^
+            return pattern.startsWith('^') ? 'REGEX_REDIRECT' : 'WILDCARD_REDIRECT';
+        }
+    
+        function parseQueryParams(queryString) {
+            const params = {};
+            if (!queryString) return params;
+            
+            queryString.split('&').forEach(param => {
+                const [key, value] = param.split('=');
+                if (key) {
+                    params[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
+                }
+            });
+            return params;
+        }
+    
+        function buildQueryString(params) {
+            const queryParts = [];
+            for (const [key, value] of Object.entries(params)) {
+                if (value === '') {
+                    queryParts.push(encodeURIComponent(key));
+                } else {
+                    queryParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
+                }
+            }
+            return queryParts.join('&');
+        }
+    
+        function handleRedirect(path, target, match) {
+            // First, handle $n pattern replacements
+            const usedGroups = new Set();
+            target = target.replace(/\$(\d+)/g, function(_, groupIndex) {
+                const index = parseInt(groupIndex);
+                usedGroups.add(index);
+                return match[index] || '';
+            });
+            
+            // Then handle wildcard (*) replacements with remaining capture groups
+            let wildcardGroupIndex = 1;
+            target = target.replace(/\*/g, function() {
+                // Find next unused capture group
+                while (usedGroups.has(wildcardGroupIndex) && wildcardGroupIndex < match.length) {
+                    wildcardGroupIndex++;
+                }
+                const replacement = match[wildcardGroupIndex] || '';
+                wildcardGroupIndex++;
+                return replacement;
+            });
+            
+            // Now handle query parameter merging
+            const [currentPathBase, currentQuery] = path.split('?');
+            const [targetBase, targetQuery] = target.split('?');
+            
+            // If no query parameters in current path, return target as is
+            if (!currentQuery) {
+                return target;
+            }
+            
+            const currentParams = parseQueryParams(currentQuery);
+            const targetParams = parseQueryParams(targetQuery);
+            
+            // Merge parameters with target taking precedence (target overrides current)
+            const mergedParams = { ...currentParams, ...targetParams };
+            
+            // Build final target with merged query parameters
+            const mergedQuery = buildQueryString(mergedParams);
+            return targetBase + (mergedQuery ? '?' + mergedQuery : '');
+        }
+    
+        function isPageNotFound() {
+            // Multiple ways to detect 404 pages
+            return document.title.toLowerCase().includes('404') || 
+                    document.title.toLowerCase().includes('not found') ||
+                    window.location.pathname.includes('404') ||
+                    document.body.classList.contains('template-404') ||
+                    document.querySelector('.template-404') !== null;
+        }
+    
+        function getRedirectChain() {
+            const chainData = sessionStorage.getItem(storageKeyMap.redirectChain);
+            if (!chainData) {
+                return { urls: [], count: 0, sessionId: getSessionId() };
+            }
+            try {
+                const chain = JSON.parse(chainData);
+                // Ensure we use the persistent session ID
+                chain.sessionId = getSessionId();
+                return chain;
+            } catch (e) {
+                log('Error parsing redirect chain, resetting', e);
+                return { urls: [], count: 0, sessionId: getSessionId() };
+            }
+        }
+    
+        function updateRedirectChain(url) {
+            const chain = getRedirectChain();
+            chain.urls.push(url);
+            chain.count++;
+            sessionStorage.setItem(storageKeyMap.redirectChain, JSON.stringify(chain));
+            return chain;
+        }
+    
+        function clearRedirectChain() {
+            sessionStorage.removeItem(storageKeyMap.redirectChain);
+        }
+    
+        function isCircularRedirect(targetUrl, chain) {
+            // Check if we've already visited this URL in the current chain
+            return chain.urls.includes(targetUrl);
+        }
+    
+        function hasExceededRedirectLimit(chain) {
+            const MAX_REDIRECTS = 5;
+            return chain.count >= MAX_REDIRECTS;
+        }
+    
+        function getSanitizedCurrentPath() {
+            let currentPath = window.location.pathname;
+            
+            // Remove trailing slash from currentPath (except for root path)
+            if (currentPath.length > 1 && currentPath.endsWith('/')) {
+                currentPath = currentPath.slice(0, -1);
+            }
+            
+            return currentPath;
+        }
+    
+        function handle404Redirects() {
+            const currentPath = getSanitizedCurrentPath();
+            const queryParams = window.location.search;
+            const fullPath = currentPath + queryParams;
+            const currentUrl = window.location.origin + fullPath;
+            const locationHref = window.location.href;
+    
+            // Get current redirect chain
+            const redirectChain = getRedirectChain();
+    
+            // Create log entry
+            let redirectLog = {
+                'from_url': fullPath,
+                'from_path': currentPath,
+                'full_path': locationHref,
+                'session_id': redirectChain.sessionId,
+                'referrer': document.referrer,
+                'timestamp': Date.now() / 1000,
+                'shop_id': redirectConfig.shopId,
+                'user_agent': navigator.userAgent,
+                'market_country_code': Shopify.country,
+                'market_locale': Shopify.locale,
+            };
+    
+            log('Checking for redirects', {
+                path: fullPath, 
+                is404: isPageNotFound(), 
+                redirectChain: redirectChain
+            });
+    
+            // Only process redirects if this is a 404 page
+            if (isPageNotFound() && redirectConfig.mappings && Array.isArray(redirectConfig.mappings)) {
+                log('Processing 404 redirects');
+    
+                // Check if we've exceeded the redirect limit
+                if (hasExceededRedirectLimit(redirectChain)) {
+                    log('Redirect limit exceeded, breaking chain', redirectChain);
+                    redirectLog['event_type'] = "CIRCULAR_REDIRECT_DETECTED";
+                    redirectLog['redirect_id'] = null;
+                    redirectLog['matched_regex'] = null;
+                    redirectLog['to_url'] = null;
+                    redirectLog['error'] = 'redirect_limit_exceeded';
+                    redirectLog['success'] = false;
+                    sendLogs(redirectConfig.apiEndpoint, redirectLog);
+                    clearRedirectChain();
+                    return;
+                }
+    
+                // Iterate through redirect mappings
+                for (const mapping of redirectConfig.mappings) {
+                    const pattern = mapping.pattern;
+                    if (!pattern) continue;
+                    const redirectId = mapping.redirect_id;
+                    const caseInsensitive = mapping.case_insensitive || false;
+                    const match = smartPatternMatch(pattern, fullPath, caseInsensitive);
+
+                    if (match) {
+                        log('Pattern matched', {pattern, match});
+                        let target = mapping.target;
+                        target = handleRedirect(fullPath, target, match);
+
+                        // Handle external vs internal redirects
+                        let targetUrl = target;
+                        if (containsValidDomain(target)) {
+                            if (!/^https?:\/\//i.test(target)) {
+                                targetUrl = 'https://' + target;
+                            }
+                        } else {
+                            // Internal redirect - construct full URL
+                            targetUrl = window.location.origin + (target.startsWith('/') ? target : '/' + target);
+                        }
+
+                        // Check for circular redirect
+                        if (isCircularRedirect(targetUrl, redirectChain)) {
+                            log('Circular redirect detected', {
+                                current: currentUrl,
+                                target: targetUrl,
+                                chain: redirectChain.urls
+                            });
+                            redirectLog['event_type'] = getEventType(pattern);
+                            redirectLog['error'] = 'circular_redirect_detected';
+                            redirectLog['to_url'] = targetUrl;
+                            redirectLog['redirect_id'] = redirectId;
+                            redirectLog['matched_regex'] = pattern;
+                            redirectLog['success'] = false;
+                            sendLogs(redirectConfig.apiEndpoint, redirectLog);
+                            clearRedirectChain();
+                            return;
+                        }
+    
+                        // Update redirect chain before redirecting
+                        updateRedirectChain(currentUrl);
+    
+                        // Add target to log
+                        redirectLog['event_type'] = getEventType(pattern);
+                        redirectLog['redirect_id'] = redirectId;
+                        redirectLog['to_url'] = targetUrl;
+                        redirectLog['matched_regex'] = pattern;
+                        redirectLog['success'] = true;
+    
+                        {% comment %} TODO: Uncomment when supporting feature {% endcomment %}
+                        localStorage.setItem(storageKeyMap.redirectLog, JSON.stringify(redirectLog));
+                        sendLogs(redirectConfig.apiEndpoint, redirectLog);
+    
+                        log('Redirecting to', targetUrl);
+    
+                        // Perform redirect
+                        window.location.replace(targetUrl);
+                        return;
+                    }
+                }
+            }
+    
+            // No redirect found - log the 404
+            if (isPageNotFound()) {
+                redirectLog['event_type'] = "404_NO_REDIRECT";
+                redirectLog['to_url'] = null;
+                redirectLog['redirect_id'] = null;
+                redirectLog['matched_regex'] = null;
+                redirectLog['success'] = false;
+                sendLogs(redirectConfig.apiEndpoint, redirectLog);
+                clearRedirectChain();
+                log('No redirect found, logging 404');
+            }
+        }
+    
+        function checkForSuccessfulRedirect() {
+            // Check if there's a redirect log in localStorage (indicates successful redirect)
+            const redirectLog = localStorage.getItem(storageKeyMap.redirectLog);
+            if (redirectLog && !isPageNotFound()) {
+                log('Successful redirect detected, sending completion log');
+                sendLogs(redirectConfig.apiEndpoint, JSON.parse(redirectLog));
+                
+                // Clear redirect chain on successful landing
+                clearRedirectChain();
+                log('Redirect chain cleared after successful landing');
+            }
+        }
+    
+        // Initialize based on page type
+        function init() {
+            log('Redirect Manager initialized', redirectConfig);
+            
+            // Run redirect logic immediately
+            if (isPageNotFound()) {
+                // Handle 404 redirects
+                handle404Redirects();
+            } else {
+                // Check for successful redirects
+                checkForSuccessfulRedirect();
+                
+                // If we're on a valid page and there's no redirect log, 
+                // clear any stale redirect chains (manual navigation)
+                const redirectLog = localStorage.getItem(storageKeyMap.redirectLog);
+                if (!redirectLog) {
+                    const chain = getRedirectChain();
+                    if (chain.count > 0) {
+                        log('Clearing stale redirect chain due to manual navigation');
+                        clearRedirectChain();
+                    }
+                }
+            }
+        }
+    
+        // Run when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    
+        // Expose configuration update function for dynamic updates
+        window.updateRedirectConfig = function(newConfig) {
+            Object.assign(redirectConfig, newConfig);
+            log('Configuration updated', redirectConfig);
+        };
+    
+        // Expose redirect chain debugging functions
+        window.getRedirectChainInfo = function() {
+            return getRedirectChain();
+        };
+    
+        window.clearRedirectChainDebug = function() {
+            clearRedirectChain();
+            log('Redirect chain cleared manually');
+        };
+    
+        window.enableRedirectDebugMode = function() {
+            localStorage.setItem(storageKeyMap.debugMode, 'true');
+            redirectConfig.debugMode = true;
+            log('Debug mode enabled');
+        };
+    
+        window.disableRedirectDebugMode = function() {
+            localStorage.removeItem(storageKeyMap.debugMode);
+            redirectConfig.debugMode = false;
+            log('Debug mode disabled');
+        };
+
+        window.getAdNabuRedirectManagerSessionId = function() {
+            return getSessionId();
+        };
+    
+        window.clearAdNabuRedirectManagerSessionId = function() {
+            clearSessionId();
+            log('Session ID cleared manually');
+        };
+})();
+</script>
+
+{% schema %}
+{
+    "name": "Redirect Tracker",
+    "target": "head",
+    "settings": []
+}
+{% endschema %}

@@ -1,0 +1,28 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "b1a12c8d1bbee2e154d6f270ea31b4f8"
+name = "Dev Test App Kanna: Sitemap"
+application_url = "https://kannadasan.adnabu.net/shopify/sitemap"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-01"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_content,read_products,read_publications,read_themes"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/sitemap"
+]
+
+[app_proxy]
+url = "https://kannadasan.adnabu.net/sitemap"
+subpath = "sitemap"
+prefix = "apps"

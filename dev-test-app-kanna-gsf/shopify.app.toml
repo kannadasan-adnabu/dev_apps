@@ -1,0 +1,25 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "e0a2c5ac6c5c05e3991c6849da23785e"
+name = "Dev Test App Kanna: GSF"
+application_url = "https://kannadasan.adnabu.net/shopify/google/feed"
+embedded = true
+handle = "kannadasan-dev"
+
+[access_scopes]
+scopes = "read_products,read_orders,read_marketing_events,write_marketing_events,read_translations,read_locales,read_markets,read_shipping,read_legal_policies,read_publications,read_inventory"
+optional_scopes = ["read_metaobjects", "read_metaobject_definitions"]
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-04"
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/google/feed"
+]
+
+[pos]
+embedded = false

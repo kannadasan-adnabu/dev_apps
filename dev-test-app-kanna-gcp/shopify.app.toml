@@ -1,0 +1,25 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "923918e5ff1ea249df516a4627b0a740"
+name = "Dev Test App Kanna: GCP"
+application_url = "https://kannadasan.adnabu.net/shopify/conversion/pixel"
+embedded = true
+handle = "dev-test-app-kannadasan-gcp"
+
+[access_scopes]
+scopes = "read_orders,read_themes,write_pixels,read_customer_events"
+optional_scopes = ["read_customers"]
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-04"
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/conversion/pixel"
+]
+
+[pos]
+embedded = false

@@ -1,0 +1,25 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "a27b91d1e95e35172827b119040fd46a"
+name = "Dev Test App Kanna: FB Feed"
+application_url = "https://kannadasan.adnabu.net/shopify/facebook-feed"
+embedded = true
+handle = "dev-test-app-kanna-fb-feed"
+
+[access_scopes]
+scopes = "read_products,read_inventory,read_markets,read_publications,read_locales,read_translations"
+optional_scopes = ["read_metaobjects", "read_metaobject_definitions"]
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-07"
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/facebook-feed"
+]
+
+[pos]
+embedded = false

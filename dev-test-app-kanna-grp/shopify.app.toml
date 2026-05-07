@@ -1,0 +1,23 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "57654670dc607ad094bd2c80723de1bd"
+name = "Dev Test App Kanna: GRP"
+application_url = "https://kannadasan.adnabu.net/shopify/remarketing/pixel"
+embedded = true
+
+[access_scopes]
+scopes = "read_customer_events,write_pixels,read_products,read_orders,read_themes,read_script_tags,write_script_tags"
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-04"
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/remarketing/pixel"
+]
+
+[pos]
+embedded = false

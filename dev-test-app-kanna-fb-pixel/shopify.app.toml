@@ -1,0 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "c05f750673e1cd034b00d930444049b1"
+name = "Dev Test App Kanna: FB Pixel"
+application_url = "https://kannadasan.adnabu.net/shopify/facebook-pixel"
+embedded = true
+handle = "dev-test-app-kanna-fb"
+
+[access_scopes]
+scopes = "read_orders,read_themes,write_pixels,read_customer_events,read_products"
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-04"
+
+[auth]
+redirect_urls = [
+  "https://kannadasan.adnabu.net/shopify/auth/callback/facebook-pixel"
+]
+
+[pos]
+embedded = false
