@@ -83,7 +83,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.10.x'
+          node-version: '22.x'
           cache: 'npm'
           cache-dependency-path: ${{ matrix.package }}/package-lock.json
 
@@ -143,7 +143,7 @@ jobs:
             echo "has-extensions=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy to Shopify (no release on PRs)
+      - name: Deploy to Shopify
         if: steps.check-extensions.outputs.has-extensions == 'true'
         working-directory: ./${{ matrix.package }}
         env:
@@ -153,5 +153,5 @@ jobs:
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
         run: |
           shopify app deploy \
-            -f \
+            --allow-updates \
             --source-control-url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
