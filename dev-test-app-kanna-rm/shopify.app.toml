@@ -6,7 +6,7 @@ application_url = "https://kannadasan.adnabu.net/shopify/redirect-manager"
 embedded = true
 
 [access_scopes]
-scopes = "read_online_store_navigation,write_online_store_navigation,read_themes"
+scopes = "read_online_store_navigation,write_online_store_navigation,read_themes,read_markets,read_locales"
 
 [build]
 automatically_update_urls_on_dev = true

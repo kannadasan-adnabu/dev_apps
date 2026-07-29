@@ -12,11 +12,40 @@ This block can be used on 404 pages or globally with conditional logic
             sessionId: 'ADNABU_REDIRECT_MANAGER_SESSION_ID',
         }
 
+        // Storage access can throw (Safari with site data blocked, sandboxed frames);
+        // an unguarded throw here would abort the whole script tag, geo runtime included.
+        // The area is passed by name because even reading window.localStorage throws in
+        // sandboxed frames — it must be dereferenced inside the try.
+        function safeStorageGet(area, key) {
+            try {
+                return window[area].getItem(key);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function safeStorageSet(area, key, value) {
+            try {
+                window[area].setItem(key, value);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function safeStorageRemove(area, key) {
+            try {
+                window[area].removeItem(key);
+            } catch (error) {
+                // Storage is blocked; there is nothing to remove
+            }
+        }
+
         const redirectConfig = {
             mappings: {{ shop.metafields.adnabu_redirect_manager_embed.configuration.value | json }},
             apiEndpoint: "https://kannadasan.adnabu.net/local-development/redirect-event-relay",
             shopId: "{{ shop.permanent_domain }}",
-            debugMode: localStorage.getItem(storageKeyMap.debugMode) || false,
+            debugMode: safeStorageGet('localStorage', storageKeyMap.debugMode) || false,
         };
 
         // Utility functions
@@ -35,17 +64,17 @@ This block can be used on 404 pages or globally with conditional logic
 
         // Session ID management functions
         function getSessionId() {
-            let sessionId = sessionStorage.getItem(storageKeyMap.sessionId);
+            let sessionId = safeStorageGet('sessionStorage', storageKeyMap.sessionId);
             if (!sessionId) {
                 sessionId = generateUUID();
-                sessionStorage.setItem(storageKeyMap.sessionId, sessionId);
+                safeStorageSet('sessionStorage', storageKeyMap.sessionId, sessionId);
                 log('New session ID generated', sessionId);
             }
             return sessionId;
         }
     
         function clearSessionId() {
-            sessionStorage.removeItem(storageKeyMap.sessionId);
+            safeStorageRemove('sessionStorage', storageKeyMap.sessionId);
             log('Session ID cleared');
         }
 
@@ -58,7 +87,7 @@ This block can be used on 404 pages or globally with conditional logic
                 const success = navigator.sendBeacon(endpoint, blob);
                 if (success) {
                     log('Log sent successfully via sendBeacon');
-                    localStorage.removeItem(storageKeyMap.redirectLog);
+                    safeStorageRemove('localStorage', storageKeyMap.redirectLog);
                 } else {
                     log('Failed to send log via sendBeacon');
                 }
@@ -71,7 +100,7 @@ This block can be used on 404 pages or globally with conditional logic
                     if (xhr.readyState === 4) {
                         if (xhr.status === 200) {
                             log('Log sent successfully via XHR fallback');
-                            localStorage.removeItem(storageKeyMap.redirectLog);
+                            safeStorageRemove('localStorage', storageKeyMap.redirectLog);
                         } else {
                             log('Failed to send log via XHR fallback', xhr.status);
                         }
@@ -275,7 +304,7 @@ This block can be used on 404 pages or globally with conditional logic
         }
     
         function getRedirectChain() {
-            const chainData = sessionStorage.getItem(storageKeyMap.redirectChain);
+            const chainData = safeStorageGet('sessionStorage', storageKeyMap.redirectChain);
             if (!chainData) {
                 return { urls: [], count: 0, sessionId: getSessionId() };
             }
@@ -294,12 +323,12 @@ This block can be used on 404 pages or globally with conditional logic
             const chain = getRedirectChain();
             chain.urls.push(url);
             chain.count++;
-            sessionStorage.setItem(storageKeyMap.redirectChain, JSON.stringify(chain));
+            safeStorageSet('sessionStorage', storageKeyMap.redirectChain, JSON.stringify(chain));
             return chain;
         }
     
         function clearRedirectChain() {
-            sessionStorage.removeItem(storageKeyMap.redirectChain);
+            safeStorageRemove('sessionStorage', storageKeyMap.redirectChain);
         }
     
         function isCircularRedirect(targetUrl, chain) {
@@ -424,7 +453,7 @@ This block can be used on 404 pages or globally with conditional logic
                         redirectLog['success'] = true;
     
                         {% comment %} TODO: Uncomment when supporting feature {% endcomment %}
-                        localStorage.setItem(storageKeyMap.redirectLog, JSON.stringify(redirectLog));
+                        safeStorageSet('localStorage', storageKeyMap.redirectLog, JSON.stringify(redirectLog));
                         sendLogs(redirectConfig.apiEndpoint, redirectLog);
     
                         log('Redirecting to', targetUrl);
@@ -451,7 +480,7 @@ This block can be used on 404 pages or globally with conditional logic
     
         function checkForSuccessfulRedirect() {
             // Check if there's a redirect log in localStorage (indicates successful redirect)
-            const redirectLog = localStorage.getItem(storageKeyMap.redirectLog);
+            const redirectLog = safeStorageGet('localStorage', storageKeyMap.redirectLog);
             if (redirectLog && !isPageNotFound()) {
                 log('Successful redirect detected, sending completion log');
                 sendLogs(redirectConfig.apiEndpoint, JSON.parse(redirectLog));
@@ -474,9 +503,9 @@ This block can be used on 404 pages or globally with conditional logic
                 // Check for successful redirects
                 checkForSuccessfulRedirect();
                 
-                // If we're on a valid page and there's no redirect log, 
+                // If we're on a valid page and there's no redirect log,
                 // clear any stale redirect chains (manual navigation)
-                const redirectLog = localStorage.getItem(storageKeyMap.redirectLog);
+                const redirectLog = safeStorageGet('localStorage', storageKeyMap.redirectLog);
                 if (!redirectLog) {
                     const chain = getRedirectChain();
                     if (chain.count > 0) {
@@ -511,13 +540,13 @@ This block can be used on 404 pages or globally with conditional logic
         };
     
         window.enableRedirectDebugMode = function() {
-            localStorage.setItem(storageKeyMap.debugMode, 'true');
+            safeStorageSet('localStorage', storageKeyMap.debugMode, 'true');
             redirectConfig.debugMode = true;
             log('Debug mode enabled');
         };
-    
+
         window.disableRedirectDebugMode = function() {
-            localStorage.removeItem(storageKeyMap.debugMode);
+            safeStorageRemove('localStorage', storageKeyMap.debugMode);
             redirectConfig.debugMode = false;
             log('Debug mode disabled');
         };
@@ -531,6 +560,613 @@ This block can be used on 404 pages or globally with conditional logic
             log('Session ID cleared manually');
         };
 })();
+
+/* ADNABU_GEO_START */
+(function() {
+    const STORAGE_KEYS = {
+        handled: 'ADNABU_GEO_REDIRECT_HANDLED',
+        dismissed: 'ADNABU_GEO_MODAL_DISMISSED',
+        sessionId: 'ADNABU_REDIRECT_MANAGER_SESSION_ID',
+        debug: 'ADNABU_REDIRECT_DEBUG_MODE',
+        detectedCountry: 'ADNABU_GEO_DETECTED_COUNTRY',
+    };
+    // The extra replace keeps merchant copy from breaking out of this script tag: a literal
+    // closing tag would end it early, and an opening comment plus script tag flips the HTML
+    // tokenizer into its double-escaped state.
+    // Escaping every '<' (it only ever appears inside JSON strings) covers both and stays valid JS.
+    const config = {{ shop.metafields.adnabu_redirect_manager_embed_local.geo_configuration.value | json | replace: '<', '\u003c' }};
+    // Fallback only — localization.country.iso_code reflects the current market context,
+    // not the visitor's IP country; browsing_context_suggestions.json is the primary source.
+    const visitorCountryFromLiquid = {{ localization.country.iso_code | json }};
+    const apiEndpoint = 'https://kannadasan.adnabu.net/local-development/redirect-event-relay';
+    const shopId = '{{ shop.permanent_domain }}';
+
+    // Storage access throws in Safari with site data blocked and in sandboxed frames, which
+    // would otherwise kill the whole runtime — reads fall back to null, writes become no-ops.
+    function storageGet(area, key) {
+        try { return window[area].getItem(key); } catch (_e) { return null; }
+    }
+    function storageSet(area, key, value) {
+        try { window[area].setItem(key, value); } catch (_e) {}
+    }
+
+    const debug = storageGet('localStorage', STORAGE_KEYS.debug) === 'true';
+
+    // Shopify's routes.root ends with a slash, but a theme overriding Shopify.routes
+    // without one would silently produce paths like '/frlocalization'
+    function getRoutesRoot() {
+        const root = (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) || '/';
+        return root.replace(/\/*$/, '/');
+    }
+
+    let detectedCountryCache = storageGet('sessionStorage', STORAGE_KEYS.detectedCountry) || null;
+
+    async function warmUpCountryDetection() {
+        if (detectedCountryCache) return;
+        try {
+            const res = await fetch(getRoutesRoot() + 'browsing_context_suggestions.json?country[enabled]=true', {cache: 'no-store'});
+            if (!res.ok) return;
+            const data = await res.json();
+            const country = data && data.detected_values && data.detected_values.country && data.detected_values.country.handle;
+            if (country) {
+                detectedCountryCache = country;
+                storageSet('sessionStorage', STORAGE_KEYS.detectedCountry, country);
+            }
+        } catch (_e) {}
+    }
+
+    function detectVisitorCountry() {
+        return detectedCountryCache
+            || visitorCountryFromLiquid
+            || (window.Shopify && Shopify.country)
+            || null;
+    }
+
+    // Prefer the visitor's detected country when the market covers it; otherwise fall back
+    // to the market's primary country code. With region_detection off the visitor's location
+    // must not influence anything, so the detected country is ignored entirely.
+    function pickDisplayCountry(market) {
+        const visitor = config.region_detection !== false ? detectVisitorCountry() : null;
+        const codes = (market && market.country_codes) || [];
+        if (visitor && codes.indexOf(visitor) !== -1) return visitor;
+        // Visitor's country isn't in the target market (e.g. a no-market country routed to the
+        // fallback market): prefer the merchant's chosen fallback country over the market's
+        // first country, which is otherwise arbitrary for a multi-country market
+        if (config.fallback_country && codes.indexOf(config.fallback_country) !== -1) return config.fallback_country;
+        return codes[0] || config.fallback_country || visitor || null;
+    }
+
+    function log() {
+        if (debug) console.log.apply(console, ['[Nabu Geo Redirect]'].concat([].slice.call(arguments)));
+    }
+
+    if (!config || config.enabled !== true) {
+        log('Disabled or config missing', config);
+        return;
+    }
+    if (storageGet('sessionStorage', STORAGE_KEYS.handled) === '1') {
+        log('Already handled this session');
+        return;
+    }
+
+    function uuid() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    function getSessionId() {
+        let id = storageGet('sessionStorage', STORAGE_KEYS.sessionId);
+        if (!id) {
+            id = uuid();
+            storageSet('sessionStorage', STORAGE_KEYS.sessionId, id);
+        }
+        return id;
+    }
+
+    // Respect Shopify's Customer Privacy consent when it's available; the API being absent
+    // means the shop has no consent requirements configured, so events are allowed.
+    function analyticsAllowed() {
+        const privacy = window.Shopify && window.Shopify.customerPrivacy;
+        if (!privacy || typeof privacy.analyticsProcessingAllowed !== 'function') return true;
+        try { return privacy.analyticsProcessingAllowed() !== false; }
+        catch (_e) { return true; }
+    }
+
+    function sendEvent(eventType, extra) {
+        if (!analyticsAllowed()) return;
+        const payload = Object.assign({
+            event_type: eventType,
+            shop_id: shopId,
+            session_id: getSessionId(),
+            timestamp: Date.now() / 1000,
+            visitor_country_code: config.region_detection !== false ? detectVisitorCountry() : null,
+            visitor_locale: (window.Shopify && Shopify.locale) || null,
+            // market_* mirrors the 404 event schema — the current market context, not the visitor's IP country
+            market_country_code: (window.Shopify && Shopify.country) || null,
+            market_locale: (window.Shopify && Shopify.locale) || null,
+            user_agent: navigator.userAgent,
+        }, extra || {});
+        try {
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(apiEndpoint, new Blob([JSON.stringify(payload)], {type: 'application/json'}));
+            } else {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', apiEndpoint, true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify(payload));
+            }
+        } catch (e) {
+            log('sendEvent failed', e);
+        }
+    }
+
+    // Returns whether the marker actually persisted — with storage blocked the guard at the
+    // top of the IIFE never trips, and AUTO mode must not redirect without that brake.
+    function markHandled() {
+        storageSet('sessionStorage', STORAGE_KEYS.handled, '1');
+        return storageGet('sessionStorage', STORAGE_KEYS.handled) === '1';
+    }
+
+    // return_to must be locale-root-relative; a locale-prefixed path would pin the old language.
+    // The locale home page has no trailing slash ('/fr' with root '/fr/'), so compare without it.
+    function toLocaleRootRelative(returnTo) {
+        let returnPath = returnTo || '/';
+        const rootNoSlash = getRoutesRoot().replace(/\/+$/, '');
+        if (rootNoSlash && returnPath.indexOf(rootNoSlash) === 0) {
+            const rest = returnPath.slice(rootNoSlash.length);
+            if (rest === '') returnPath = '/';
+            else if (rest.charAt(0) === '/') returnPath = rest;
+        }
+        // Collapse leading slashes: '//evil.example/x' is a protocol-relative URL, not a path
+        return '/' + returnPath.replace(/^\/+/, '');
+    }
+
+    // Submit Shopify's localization form so Shopify updates country/market/currency and
+    // redirects to the locale-aware URL; self-built market URLs are brittle.
+    function switchCountry(countryCode, returnTo, localeCode) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = getRoutesRoot() + 'localization';
+        form.hidden = true;
+        const fields = [
+            ['_method', 'PUT'],
+            ['country_code', countryCode || ''],
+            ['return_to', toLocaleRootRelative(returnTo) + (window.location.search || '')],
+        ];
+        if (localeCode) fields.push(['locale_code', localeCode]);
+        for (const pair of fields) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = pair[0];
+            input.value = pair[1];
+            form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    function findTargetMarket() {
+        // With region_detection off, skip the country lookup and go straight to fallback
+        if (config.region_detection !== false) {
+            const byCountry = marketForCountry(detectVisitorCountry());
+            if (byCountry) return byCountry;
+        }
+        if (config.fallback_market_id) {
+            const byId = (config.markets || []).find(function(m) { return m.shopify_id === config.fallback_market_id; });
+            if (byId) return byId;
+        }
+        return marketForCountry(config.fallback_country);
+    }
+
+    // Prefer the shop-wide default_language URL when the market supports it, then the market's
+    // own locales, then primary_url (which can point at the shop root on partially-configured shops).
+    function pickMarketUrl(market) {
+        if (!market) return null;
+        const localeUrls = market.locale_urls || {};
+        const globalDefault = config.default_language;
+        if (globalDefault && localeUrls[globalDefault]) return localeUrls[globalDefault];
+        const marketDefault = (market.locales && market.locales[0]) || null;
+        if (marketDefault && localeUrls[marketDefault]) return localeUrls[marketDefault];
+        const anyLocaleUrl = Object.values(localeUrls)[0];
+        if (anyLocaleUrl) return anyLocaleUrl;
+        return market.primary_url || null;
+    }
+
+    // Analytics to_url should be where the visitor actually lands — the market URL joined
+    // with the return path and query string, matching what switchCountry submits as return_to
+    function buildDestinationUrl(market, returnTo) {
+        const base = pickMarketUrl(market);
+        if (!base) return null;
+        return base.replace(/\/+$/, '') + toLocaleRootRelative(returnTo) + (window.location.search || '');
+    }
+
+    function marketPathFromUrl(url) {
+        try {
+            const path = new URL(url).pathname.replace(/\/+$/, '');
+            return path || '/';
+        } catch (_e) { return null; }
+    }
+
+    function isSameOrigin(url) {
+        try { return new URL(url).origin.toLowerCase() === window.location.origin.toLowerCase(); }
+        catch (_e) { return false; }
+    }
+
+    // Detect the market the visitor is currently browsing by matching subfolder prefixes
+    function findVisitorMarketPath() {
+        const markets = config.markets || [];
+        const visitorPath = window.location.pathname.replace(/\/+$/, '') || '/';
+        const sorted = markets.slice().sort(function(a, b) {
+            return (marketPathFromUrl(b.primary_url) || '').length - (marketPathFromUrl(a.primary_url) || '').length;
+        });
+        for (const m of sorted) {
+            // A market on another domain can share a subfolder with a locale prefix on this
+            // one, so only same-origin markets can claim the current path.
+            if (!isSameOrigin(m.primary_url)) continue;
+            const mp = marketPathFromUrl(m.primary_url);
+            if (!mp) continue;
+            if (mp === '/') return '/';
+            if (visitorPath === mp || visitorPath.startsWith(mp + '/')) return mp;
+        }
+        return null;
+    }
+
+    // Compare against the market's primary_url on both sides — pickMarketUrl() prefers a
+    // locale URL whose path prefix differs from the primary one, which would flag visitors
+    // already in the right market as needing a switch.
+    function isAlreadyInMarket(market, targetUrl) {
+        const referenceUrl = (market && market.primary_url) || targetUrl;
+        if (!isSameOrigin(referenceUrl)) return false;
+        // Markets can share one domain with no subfolder (the context then comes from the
+        // buyer's localization cookie), so the URL alone can't prove the market — the
+        // current context country must also be covered by the target market.
+        if (visitorCountryFromLiquid && market
+                && (market.country_codes || []).indexOf(visitorCountryFromLiquid) === -1) {
+            return false;
+        }
+        // Without a primary_url there is no path to anchor a comparison — same origin plus
+        // a covered context country is the strongest signal left.
+        if (!market || !market.primary_url) return true;
+        return findVisitorMarketPath() === marketPathFromUrl(referenceUrl);
+    }
+
+    // Display names resolve in the storefront's locale and are memoized — Intl.DisplayNames
+    // construction is expensive and countryName() runs inside the dropdown sort comparator.
+    const displayNameResolvers = {};
+    const displayNameCaches = {region: {}, language: {}};
+
+    function resolveDisplayName(type, locale, code) {
+        const resolverKey = type + ':' + locale;
+        if (!(resolverKey in displayNameResolvers)) {
+            try { displayNameResolvers[resolverKey] = new Intl.DisplayNames([locale], {type: type}); }
+            catch (_e) { displayNameResolvers[resolverKey] = null; }
+        }
+        const resolver = displayNameResolvers[resolverKey];
+        if (!resolver) return code;
+        try { return resolver.of(code) || code; }
+        catch (_e) { return code; }
+    }
+
+    function countryName(code) {
+        if (!code) return '';
+        const locale = (window.Shopify && Shopify.locale) || 'en';
+        const cache = displayNameCaches.region;
+        if (cache[code] === undefined) cache[code] = resolveDisplayName('region', locale, code);
+        return cache[code];
+    }
+
+    // SVG flag from flagcdn.com — same source as the admin preview; emoji flags don't render on Windows
+    function flagImgMarkup(countryCode) {
+        if (!countryCode || !/^[A-Za-z]{2}$/.test(countryCode)) return '';
+        const cc = String(countryCode).toLowerCase();
+        // onerror removes the img so a CSP-blocked or unreachable CDN never shows a broken icon
+        return '<img src="https://flagcdn.com/' + cc + '.svg" alt="" width="16" height="12" '
+            + 'referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()" '
+            + 'style="display:inline-block;vertical-align:middle;object-fit:cover;" />';
+    }
+
+    function languageName(code) {
+        if (!code) return '';
+        const cache = displayNameCaches.language;
+        if (cache[code] === undefined) cache[code] = resolveDisplayName('language', code, code);
+        return cache[code];
+    }
+
+    function substituteTokens(template, replacements) {
+        if (typeof template !== 'string' || !template) return '';
+        return template
+            .replace(/\{country\}/g, replacements.country || '')
+            .replace(/\{language\}/g, replacements.language || '')
+            .replace(/\{currency\}/g, replacements.currency || '');
+    }
+
+    // Injects the flag SVG before the country name; all template segments are escaped
+    function renderHeaderHtml(template, replacements, flagHtml) {
+        if (typeof template !== 'string' || !template) return '';
+        const parts = template.split('{country}');
+        const substituteNonCountry = function(segment) {
+            return substituteTokens(segment, Object.assign({}, replacements, {country: ''}));
+        };
+        const before = escapeHtml(substituteNonCountry(parts[0]));
+        if (parts.length === 1) return before;
+        const country = escapeHtml(replacements.country || '');
+        // Later {country} occurrences render the plain name — the flag only decorates the first
+        const after = escapeHtml(substituteTokens(parts.slice(1).join('{country}'), replacements));
+        return before + flagHtml + (flagHtml ? ' ' : '') + country + after;
+    }
+
+    function escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function marketForCountry(code) {
+        return (config.markets || []).find(function(m) {
+            return (m.country_codes || []).indexOf(code) !== -1;
+        }) || null;
+    }
+
+    function collectMarketCountryCodes() {
+        const codes = [];
+        (config.markets || []).forEach(function(m) {
+            (m.country_codes || []).forEach(function(code) {
+                if (code && codes.indexOf(code) === -1) codes.push(code);
+            });
+        });
+        return codes.sort(function(a, b) { return countryName(a).localeCompare(countryName(b)); });
+    }
+
+    function localesForCountry(code, fallbackMarket) {
+        const market = marketForCountry(code) || fallbackMarket;
+        const locales = (market && market.locales) || [];
+        if (locales.length) return locales;
+        return config.shop_primary_locale ? [config.shop_primary_locale] : [];
+    }
+
+    function preferredLocaleFor(market) {
+        return config.default_language
+            || (market && market.locales && market.locales[0])
+            || config.shop_primary_locale || '';
+    }
+
+    // Detected/default value first (and preselected); the rest keep their order
+    function orderedWithFirst(list, first) {
+        if (!first || list.indexOf(first) === -1) return list;
+        return [first].concat(list.filter(function(item) { return item !== first; }));
+    }
+
+    function selectOptionsMarkup(values, labelFor) {
+        return values.map(function(value, index) {
+            return '<option value="' + escapeHtml(value) + '"' + (index === 0 ? ' selected' : '') + '>'
+                + escapeHtml(labelFor(value)) + '</option>';
+        }).join('');
+    }
+
+    function selectFieldMarkup(label, attribute, optionsHtml) {
+        return [
+            '<div>',
+            '<p style="margin:0 0 4px;font-size:11px;color:#6b7280;">' + escapeHtml(label) + '</p>',
+            '<select ' + attribute + ' aria-label="' + escapeHtml(label) + '" style="width:100%;background:#fff;border:1px solid #dfe3e8;border-radius:6px;padding:6px 8px;font-size:12px;color:#111827;">' + optionsHtml + '</select>',
+            '</div>',
+        ].join('');
+    }
+
+    function renderModal(market, targetUrl) {
+        const modalCopy = config.modal_copy || {};
+        const allCountryCodes = collectMarketCountryCodes();
+        const picked = pickDisplayCountry(market);
+        // The header/CTA must describe the same country the dropdown preselects, so a pick
+        // no market covers (empty country_codes + uncovered fallback) falls back to the list
+        const countryCode = allCountryCodes.indexOf(picked) !== -1 ? picked : (allCountryCodes[0] || picked);
+        const preferredLanguage = preferredLocaleFor(market);
+        const languageOptions = orderedWithFirst(localesForCountry(countryCode, market), preferredLanguage);
+        // {language} copy must name the option the dropdown actually preselects — a
+        // default_language the target market doesn't publish is dropped from the list
+        const languageCode = languageOptions[0] || preferredLanguage;
+        const flagHtml = flagImgMarkup(countryCode);
+        const replacements = {
+            country: countryName(countryCode) || market.name || '',
+            language: languageName(languageCode),
+            currency: market.currency_code || '',
+        };
+        // Hex-only guard: cta_color lands in a style attribute, so reject arbitrary CSS
+        const ctaColor = /^#[0-9a-fA-F]{3,8}$/.test(modalCopy.cta_color || '') ? modalCopy.cta_color : '#1F1F1F';
+        const headerTemplate = modalCopy.header || 'It looks like you are shopping from {country}';
+        const descriptionTemplate = modalCopy.description || 'Visit our {country} store for {currency} pricing.';
+        const ctaTemplate = modalCopy.cta_label || 'Continue to {country} store';
+        const countryOptions = orderedWithFirst(allCountryCodes, countryCode);
+
+        const overlay = document.createElement('div');
+        overlay.setAttribute('data-adnabu-geo-modal', '');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,15,15,0.32);z-index:2147483646;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;';
+        overlay.innerHTML = [
+            '<div role="dialog" aria-modal="true" data-adnabu-geo-dialog aria-label="' + escapeHtml(substituteTokens(headerTemplate, replacements)) + '" style="background:#fff;border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,0.18);padding:20px;max-width:340px;width:calc(100% - 40px);">',
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">',
+            '<p data-adnabu-geo-header style="margin:0;font-size:15px;font-weight:500;line-height:1.35;">' + renderHeaderHtml(headerTemplate, replacements, flagHtml) + '</p>',
+            '<button type="button" aria-label="Close" data-adnabu-geo-dismiss style="background:transparent;border:none;padding:0;cursor:pointer;color:#5c6a7a;font-size:20px;line-height:1;">×</button>',
+            '</div>',
+            '<p data-adnabu-geo-description style="margin:12px 0 0;font-size:13px;color:#374151;line-height:1.4;">' + escapeHtml(substituteTokens(descriptionTemplate, replacements)) + '</p>',
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;">',
+            selectFieldMarkup(modalCopy.country_field_label || 'Country', 'data-adnabu-geo-country', selectOptionsMarkup(countryOptions, countryName)),
+            selectFieldMarkup(modalCopy.language_field_label || 'Language', 'data-adnabu-geo-language', selectOptionsMarkup(languageOptions, languageName)),
+            '</div>',
+            '<button type="button" data-adnabu-geo-accept style="margin-top:16px;width:100%;background:' + escapeHtml(ctaColor) + ';color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:600;font-size:13px;cursor:pointer;">',
+            escapeHtml(substituteTokens(ctaTemplate, replacements)),
+            '</button>',
+            '</div>',
+        ].join('');
+
+        const previouslyFocused = document.activeElement;
+        document.body.appendChild(overlay);
+        sendEvent('GEO_MODAL_SHOWN', {target_country_code: countryCode, target_market_id: market.shopify_id});
+
+        const dialogElement = overlay.querySelector('[data-adnabu-geo-dialog]');
+        const headerElement = overlay.querySelector('[data-adnabu-geo-header]');
+        const descriptionElement = overlay.querySelector('[data-adnabu-geo-description]');
+        const countrySelect = overlay.querySelector('[data-adnabu-geo-country]');
+        const languageSelect = overlay.querySelector('[data-adnabu-geo-language]');
+        const acceptButton = overlay.querySelector('[data-adnabu-geo-accept]');
+
+        // All templated copy tracks the current selection, not just the CTA — a modal that
+        // still says "Shopping from France?" above a "Continue to Germany store" button lies
+        function updateModalCopy() {
+            const chosenCountry = countrySelect.value || countryCode;
+            const chosenMarket = marketForCountry(chosenCountry) || market;
+            const chosen = {
+                country: countryName(chosenCountry) || chosenMarket.name || '',
+                language: languageName(languageSelect.value || languageCode),
+                currency: chosenMarket.currency_code || '',
+            };
+            headerElement.innerHTML = renderHeaderHtml(headerTemplate, chosen, flagImgMarkup(chosenCountry));
+            descriptionElement.textContent = substituteTokens(descriptionTemplate, chosen);
+            acceptButton.textContent = substituteTokens(ctaTemplate, chosen);
+            dialogElement.setAttribute('aria-label', substituteTokens(headerTemplate, chosen));
+        }
+
+        function handleKeydown(e) {
+            if (e.key === 'Escape') { dismiss(); return; }
+            if (e.key !== 'Tab') return;
+            // Keep Tab cycling inside the dialog while it is open
+            const focusables = overlay.querySelectorAll('select, button');
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+        function dismiss() {
+            storageSet('sessionStorage', STORAGE_KEYS.dismissed, '1');
+            sendEvent('GEO_MODAL_DISMISSED', {target_country_code: countryCode, target_market_id: market.shopify_id});
+            document.removeEventListener('keydown', handleKeydown);
+            overlay.remove();
+            if (previouslyFocused && typeof previouslyFocused.focus === 'function') previouslyFocused.focus();
+        }
+        function accept() {
+            // Guard against double submission — the first click already navigates
+            if (acceptButton.disabled) return;
+            acceptButton.disabled = true;
+            document.removeEventListener('keydown', handleKeydown);
+            const chosenCountry = countrySelect.value || countryCode;
+            const chosenMarket = marketForCountry(chosenCountry) || market;
+            sendEvent('GEO_MODAL_ACCEPTED', {
+                target_country_code: chosenCountry, target_market_id: chosenMarket.shopify_id,
+                to_url: buildDestinationUrl(chosenMarket, window.location.pathname) || targetUrl,
+            });
+            switchCountry(chosenCountry, window.location.pathname, languageSelect.value || languageCode);
+        }
+        countrySelect.addEventListener('change', function() {
+            // Same preference order as the initial render, so toggling a country away and
+            // back preselects the same language
+            const chosenMarket = marketForCountry(countrySelect.value) || market;
+            const locales = orderedWithFirst(localesForCountry(countrySelect.value, market), preferredLocaleFor(chosenMarket));
+            languageSelect.innerHTML = selectOptionsMarkup(locales, languageName);
+            updateModalCopy();
+        });
+        languageSelect.addEventListener('change', updateModalCopy);
+        overlay.querySelector('[data-adnabu-geo-dismiss]').addEventListener('click', dismiss);
+        acceptButton.addEventListener('click', accept);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) dismiss(); });
+        document.addEventListener('keydown', handleKeydown);
+        countrySelect.focus({preventScroll: true});
+    }
+
+    // Best-effort bot exclusion: JS-rendering crawlers (Googlebot, Bingbot) keep their bot UA
+    // while rendering, and navigator.webdriver catches headless automation (Lighthouse, Playwright).
+    // Redirecting crawlers by IP breaks indexing of localized markets, so bots get neither
+    // redirects nor modals — and never reach sendEvent, keeping analytics human-only.
+    function isBot() {
+        if (navigator.webdriver) return true;
+        return /bot|crawler|spider|crawling|slurp|lighthouse|headless|bingpreview|facebookexternalhit|whatsapp|telegram|pinterest|semrush|ahrefs|screaming frog/i
+            .test(navigator.userAgent);
+    }
+
+    async function run() {
+        if (isBot()) {
+            log('Bot or automation detected; skipping geo handling');
+            return;
+        }
+        await countryDetectionReady;
+        const targetMarket = findTargetMarket();
+        if (!targetMarket) {
+            log('No target market found for visitor country', detectVisitorCountry());
+            return;
+        }
+        const targetUrl = pickMarketUrl(targetMarket);
+        if (!targetUrl) {
+            log('No URL resolved for target market', targetMarket);
+            return;
+        }
+        if (isAlreadyInMarket(targetMarket, targetUrl)) {
+            log('Visitor already in target market origin', targetUrl);
+            return;
+        }
+        if (config.mode === 'AUTO') {
+            // Submit only a country the target market covers, so the reported market and
+            // the market Shopify resolves can't diverge
+            const targetCountries = targetMarket.country_codes || [];
+            const picked = pickDisplayCountry(targetMarket);
+            const submitCountry = targetCountries.indexOf(picked) !== -1 ? picked : targetCountries[0];
+            if (!submitCountry) {
+                log('Target market has no country to submit; skipping AUTO redirect');
+                return;
+            }
+            // No persisted marker means no brake against reload loops — storage-blocked
+            // visitors usually block the localization cookie too, so the switch won't stick
+            if (!markHandled()) {
+                log('Session marker not persisted; skipping AUTO redirect');
+                return;
+            }
+            sendEvent('GEO_AUTO_REDIRECTED', {
+                target_country_code: submitCountry, target_market_id: targetMarket.shopify_id,
+                to_url: buildDestinationUrl(targetMarket, window.location.pathname) || targetUrl,
+            });
+            // Honor default_language when the target market publishes it, matching pickMarketUrl's choice
+            const autoLocale = config.default_language
+                && (targetMarket.locales || []).indexOf(config.default_language) !== -1
+                ? config.default_language : null;
+            switchCountry(submitCountry, window.location.pathname, autoLocale);
+            return;
+        }
+        if (config.mode !== 'MODAL') {
+            log('Unknown redirection mode; skipping', config.mode);
+            return;
+        }
+        if (storageGet('sessionStorage', STORAGE_KEYS.dismissed) === '1') {
+            log('Modal was dismissed this session; skipping');
+            return;
+        }
+        // Mark handled only after a successful render — a throw partway would otherwise cost
+        // the visitor the modal for the whole session and leave a dead overlay on the page
+        try {
+            renderModal(targetMarket, targetUrl);
+        } catch (renderError) {
+            const partialOverlay = document.querySelector('[data-adnabu-geo-modal]');
+            if (partialOverlay) partialOverlay.remove();
+            log('Modal render failed', renderError);
+            return;
+        }
+        markHandled();
+    }
+
+    // Detection starts at script evaluation (this block targets head) so the network round
+    // trip overlaps document parsing instead of delaying the redirect past DOMContentLoaded.
+    // With region_detection off the visitor is never geolocated — no lookup, no cache.
+    const countryDetectionReady = !isBot() && config.region_detection !== false
+        ? warmUpCountryDetection() : Promise.resolve();
+
+    // async run() would otherwise surface storage/network failures as unhandled rejections
+    function startGeo() {
+        run().catch(function(e) { log('Geo run failed', e); });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startGeo);
+    } else {
+        startGeo();
+    }
+})();
+/* ADNABU_GEO_END */
 </script>
 
 {% schema %}
