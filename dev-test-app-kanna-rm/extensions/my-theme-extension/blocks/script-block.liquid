@@ -6,10 +6,10 @@ This block can be used on 404 pages or globally with conditional logic
 <script>
     (function() {
         const storageKeyMap = {
-            redirectChain: 'ADNABU_REDIRECT_CHAIN',
-            redirectLog: 'ADNABU_REDIRECT_LOG',
-            debugMode: 'ADNABU_REDIRECT_DEBUG_MODE',
-            sessionId: 'ADNABU_REDIRECT_MANAGER_SESSION_ID',
+            redirectChain: 'LOCAL_ADNABU_REDIRECT_CHAIN',
+            redirectLog: 'LOCAL_ADNABU_REDIRECT_LOG',
+            debugMode: 'LOCAL_ADNABU_REDIRECT_DEBUG_MODE',
+            sessionId: 'LOCAL_ADNABU_REDIRECT_MANAGER_SESSION_ID',
         }
 
         // Storage access can throw (Safari with site data blocked, sandboxed frames);
@@ -566,10 +566,11 @@ This block can be used on 404 pages or globally with conditional logic
 /* ADNABU_GEO_START */
 (function() {
     const STORAGE_KEYS = {
-        handled: 'ADNABU_GEO_REDIRECT_HANDLED',
-        sessionId: 'ADNABU_REDIRECT_MANAGER_SESSION_ID',
-        debug: 'ADNABU_REDIRECT_DEBUG_MODE',
-        detectedCountry: 'ADNABU_GEO_DETECTED_COUNTRY',
+        handled: 'LOCAL_ADNABU_GEO_REDIRECT_HANDLED',
+        sessionId: 'LOCAL_ADNABU_REDIRECT_MANAGER_SESSION_ID',
+        debug: 'LOCAL_ADNABU_REDIRECT_DEBUG_MODE',
+        detectedCountry: 'LOCAL_ADNABU_GEO_DETECTED_COUNTRY',
+        detectionAttempted: 'LOCAL_ADNABU_GEO_DETECTION_ATTEMPTED',
     };
     // The extra replace keeps merchant copy from breaking out of this script tag: a literal
     // closing tag would end it early, and an opening comment plus script tag flips the HTML
@@ -601,9 +602,12 @@ This block can be used on 404 pages or globally with conditional logic
     }
 
     let detectedCountryCache = storageGet('sessionStorage', STORAGE_KEYS.detectedCountry) || null;
+    // A miss (blocked endpoint, no country in the response, fetch failure) leaves detectedCountry
+    // unset, so remember that detection ran to avoid refetching the endpoint on every pageview
+    let detectionAttempted = storageGet('sessionStorage', STORAGE_KEYS.detectionAttempted) === '1';
 
     async function warmUpCountryDetection() {
-        if (detectedCountryCache) return;
+        if (detectedCountryCache || detectionAttempted) return;
         try {
             const res = await fetch(getRoutesRoot() + 'browsing_context_suggestions.json?country[enabled]=true', {cache: 'no-store'});
             if (!res.ok) return;
@@ -614,7 +618,11 @@ This block can be used on 404 pages or globally with conditional logic
                 detectedCountryCache = String(country).toUpperCase();
                 storageSet('sessionStorage', STORAGE_KEYS.detectedCountry, detectedCountryCache);
             }
-        } catch (_e) {}
+        } catch (_e) {
+        } finally {
+            detectionAttempted = true;
+            storageSet('sessionStorage', STORAGE_KEYS.detectionAttempted, '1');
+        }
     }
 
     function detectVisitorCountry() {
@@ -756,13 +764,33 @@ This block can be used on 404 pages or globally with conditional logic
         return marketForCountry(config.fallback_country);
     }
 
-    // Prefer the shop-wide default_language URL when the market supports it, then the market's
-    // own locales, then primary_url (which can point at the shop root on partially-configured shops).
+    // Auto-detect (no saved default_language) maps the visitor's browser language(s) to a locale the
+    // market publishes: an exact locale match wins, then a base-language match (e.g. fr-FR -> fr).
+    function detectBrowserLocale(locales) {
+        if (!locales || !locales.length) return null;
+        const nav = window.navigator || {};
+        const prefs = (nav.languages && nav.languages.length) ? nav.languages : (nav.language ? [nav.language] : []);
+        for (let i = 0; i < prefs.length; i++) {
+            const pref = String(prefs[i]).toLowerCase();
+            const base = pref.split('-')[0];
+            const exact = locales.find(function(l) { return String(l).toLowerCase() === pref; });
+            if (exact) return exact;
+            const baseMatch = locales.find(function(l) { return String(l).toLowerCase().split('-')[0] === base; });
+            if (baseMatch) return baseMatch;
+        }
+        return null;
+    }
+
+    // Prefer the shop-wide default_language URL when the market supports it, then the visitor's
+    // browser language, then the market's own locales, then primary_url (which can point at the
+    // shop root on partially-configured shops).
     function pickMarketUrl(market) {
         if (!market) return null;
         const localeUrls = market.locale_urls || {};
         const globalDefault = config.default_language;
         if (globalDefault && localeUrls[globalDefault]) return localeUrls[globalDefault];
+        const detected = detectBrowserLocale(market.locales || []);
+        if (detected && localeUrls[detected]) return localeUrls[detected];
         const marketDefault = (market.locales && market.locales[0]) || null;
         if (marketDefault && localeUrls[marketDefault]) return localeUrls[marketDefault];
         const anyLocaleUrl = Object.values(localeUrls)[0];
@@ -923,8 +951,10 @@ This block can be used on 404 pages or globally with conditional logic
     }
 
     function preferredLocaleFor(market) {
-        return config.default_language
-            || (market && market.locales && market.locales[0])
+        if (config.default_language) return config.default_language;
+        const locales = (market && market.locales) || [];
+        return detectBrowserLocale(locales)
+            || locales[0]
             || config.shop_primary_locale || '';
     }
 
@@ -941,11 +971,13 @@ This block can be used on 404 pages or globally with conditional logic
         }).join('');
     }
 
-    function selectFieldMarkup(label, attribute, optionsHtml) {
+    function selectFieldMarkup(id, label, attribute, optionsHtml) {
+        // label for + matching id ties the visible caption to the select, so voice-control
+        // users can target it (an aria-label alone is invisible and not voice-addressable)
         return [
             '<div>',
-            '<p style="margin:0 0 4px;font-size:11px;color:#6b7280;">' + escapeHtml(label) + '</p>',
-            '<select ' + attribute + ' aria-label="' + escapeHtml(label) + '" style="width:100%;background:#fff;border:1px solid #dfe3e8;border-radius:6px;padding:6px 8px;font-size:12px;color:#111827;">' + optionsHtml + '</select>',
+            '<label for="' + id + '" style="display:block;margin:0 0 4px;font-size:11px;color:#6b7280;">' + escapeHtml(label) + '</label>',
+            '<select id="' + id + '" ' + attribute + ' style="width:100%;background:#fff;border:1px solid #dfe3e8;border-radius:6px;padding:4px 0;font-size:12px;color:#111827;">' + optionsHtml + '</select>',
             '</div>',
         ].join('');
     }
@@ -981,13 +1013,13 @@ This block can be used on 404 pages or globally with conditional logic
         overlay.innerHTML = [
             '<div role="dialog" aria-modal="true" data-adnabu-geo-dialog aria-label="' + escapeHtml(substituteTokens(headerTemplate, replacements)) + '" style="background:#fff;border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,0.18);padding:20px;max-width:340px;width:calc(100% - 40px);">',
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">',
-            '<p data-adnabu-geo-header style="margin:0;font-size:15px;font-weight:500;line-height:1.35;">' + renderHeaderHtml(headerTemplate, replacements, flagHtml) + '</p>',
+            '<p data-adnabu-geo-header aria-live="polite" style="margin:0;font-size:15px;font-weight:500;line-height:1.35;">' + renderHeaderHtml(headerTemplate, replacements, flagHtml) + '</p>',
             '<button type="button" aria-label="Close" data-adnabu-geo-dismiss style="background:transparent;border:none;padding:0;cursor:pointer;color:#5c6a7a;font-size:20px;line-height:1;">×</button>',
             '</div>',
-            '<p data-adnabu-geo-description style="margin:12px 0 0;font-size:13px;color:#374151;line-height:1.4;">' + escapeHtml(substituteTokens(descriptionTemplate, replacements)) + '</p>',
+            '<p data-adnabu-geo-description aria-live="polite" style="margin:12px 0 0;font-size:13px;color:#374151;line-height:1.4;">' + escapeHtml(substituteTokens(descriptionTemplate, replacements)) + '</p>',
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;">',
-            selectFieldMarkup(modalCopy.country_field_label || 'Country', 'data-adnabu-geo-country', selectOptionsMarkup(countryOptions, countryName)),
-            selectFieldMarkup(modalCopy.language_field_label || 'Language', 'data-adnabu-geo-language', selectOptionsMarkup(languageOptions, languageName)),
+            selectFieldMarkup('adnabu-geo-country-select', modalCopy.country_field_label || 'Country', 'data-adnabu-geo-country', selectOptionsMarkup(countryOptions, countryName)),
+            selectFieldMarkup('adnabu-geo-language-select', modalCopy.language_field_label || 'Language', 'data-adnabu-geo-language', selectOptionsMarkup(languageOptions, languageName)),
             '</div>',
             '<button type="button" data-adnabu-geo-accept style="margin-top:16px;width:100%;background:' + escapeHtml(ctaColor) + ';color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:600;font-size:13px;cursor:pointer;">',
             escapeHtml(substituteTokens(ctaTemplate, replacements)),
@@ -1075,7 +1107,7 @@ This block can be used on 404 pages or globally with conditional logic
     }
 
     // Best-effort bot exclusion: JS-rendering crawlers (Googlebot, Bingbot) keep their bot UA
-    // while rendering, and navigator.webdriver catches headless automation (Lighthouse, Playwright).
+    // while rendering, and navigator.webdriver catches headless automation.
     // Redirecting crawlers by IP breaks indexing of localized markets, so bots get neither
     // redirects nor modals — and never reach sendEvent, keeping analytics human-only.
     function isBot() {
