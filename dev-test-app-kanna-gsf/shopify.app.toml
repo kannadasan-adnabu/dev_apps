@@ -6,6 +6,9 @@ application_url = "https://kannadasan.adnabu.net/shopify/google/feed"
 embedded = true
 handle = "kannadasan-dev"
 
+[sidekick]
+extensions_summary = "Check Google Shopping feed status from Nabu for Google Feed: see how many products are approved, pending review, disapproved or excluded from the feed; look up the exact product data being sent to Google for a specific product; find out why a product was never sent to Google; check when the feed last synced to Google Merchant Center and when the app last read products from Shopify; check the connected Google Merchant Center account."
+
 [access_scopes]
 scopes = "read_products,read_orders,read_marketing_events,write_marketing_events,read_translations,read_locales,read_markets,read_shipping,read_legal_policies,read_publications,read_inventory"
 optional_scopes = ["read_metaobjects", "read_metaobject_definitions"]

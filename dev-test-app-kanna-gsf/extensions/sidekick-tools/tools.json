@@ -1,0 +1,111 @@
+[
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_product_listing_status",
+    "description": "Counts of products in the Google Shopping feed by listing status for one Google feed (the store's primary feed unless a country is given): approved, pending review, disapproved, excluded (opted out), blocklisted, and opted in with no Google status yet.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "country": {
+          "type": "string",
+          "description": "Two-letter ISO country code of the Google feed to check, e.g. US or IN. Omit to use the store's primary feed."
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code of that country's feed, e.g. en or fr. Omit to use the country's first feed language."
+        }
+      }
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_product_feed_details",
+    "description": "The Google listing status of one product (approved, pending, disapproved, excluded and blocklisted counts across its variants) and the exact data being sent to Google for it: title, GTIN, MPN, brand, price, availability, condition, image and Google product category. Look up by product name, SKU, handle, or Shopify product or variant ID/GID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "product_name": {
+          "type": "string",
+          "description": "The product to look up: its name, a variant SKU, its handle, or a Shopify product or variant ID or GID (e.g. gid://shopify/Product/123). A SKU or variant ID narrows the answer to that variant."
+        },
+        "country": {
+          "type": "string",
+          "description": "Two-letter ISO country code of the Google feed to check, e.g. US or IN. Omit to use the store's primary feed."
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code of that country's feed, e.g. en or fr. Omit to use the country's first feed language."
+        }
+      },
+      "required": ["product_name"]
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_feed_exclusion_reason",
+    "description": "Why a specific product, or some of its variants, is not in the Google feed: opted out, blocklisted, draft, unpublished, deleted, or feed validation issues, with the affected variants. Look up by product name, SKU, handle, or Shopify product or variant ID/GID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "product_name": {
+          "type": "string",
+          "description": "The product to look up: its name, a variant SKU, its handle, or a Shopify product or variant ID or GID (e.g. gid://shopify/Product/123). A SKU or variant ID narrows the answer to that variant."
+        },
+        "country": {
+          "type": "string",
+          "description": "Two-letter ISO country code of the Google feed to check, e.g. US or IN. Omit to use the store's primary feed."
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code of that country's feed, e.g. en or fr. Omit to use the country's first feed language."
+        }
+      },
+      "required": ["product_name"]
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_google_sync_activity",
+    "description": "For one Google feed (the store's primary feed unless a country is given): when its products were last pushed to Google Merchant Center and whether that push succeeded, completed with failures, or is in progress, and when its approval statuses were last fetched from Google.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "country": {
+          "type": "string",
+          "description": "Two-letter ISO country code of the Google feed to check, e.g. US or IN. Omit to use the store's primary feed."
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code of that country's feed, e.g. en or fr. Omit to use the country's first feed language."
+        }
+      }
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_shopify_sync_activity",
+    "description": "When the app last read product data from Shopify and whether that sync succeeded, failed, or is in progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_connected_account",
+    "description": "The connected Google Merchant Center account name and ID, and whether the connection is active, needs reauthorization, or is disconnected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_setup_guide",
+    "description": "A link and summary for the Nabu for Google Feed onboarding and setup guide, with the store's current setup progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]

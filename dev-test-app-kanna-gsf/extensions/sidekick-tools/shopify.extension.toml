@@ -1,0 +1,14 @@
+api_version = "2026-07"
+
+[[extensions]]
+uid = "831ac208-605b-4165-8a7d-0630e73b8225c6e63fd6"
+name = "Nabu for Google Feed Sidekick tools"
+description = "Check Google Shopping feed status in Nabu for Google Feed: listing status counts, per-product feed data and exclusion reasons, Google and Shopify sync activity, the connected Merchant Center account, and the setup guide."
+handle = "sidekick-tools"
+type = "ui_extension"
+
+[[extensions.targeting]]
+module = "./src/index.js"
+target = "admin.app.tools.data"
+tools = "./tools.json"
+instructions = "./instructions.md"
