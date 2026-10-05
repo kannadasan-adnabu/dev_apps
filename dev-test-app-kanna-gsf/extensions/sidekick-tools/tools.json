@@ -1,0 +1,77 @@
+[
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_product_listing_status",
+    "description": "Counts of products in the Google Shopping feed by listing status for the store's primary feed: approved, pending review, disapproved, excluded (opted out) and blocklisted.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_product_feed_details",
+    "description": "The exact product data being sent to Google for one product: title, GTIN, MPN, brand, price, availability, condition, image and Google product category. Look up by product name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "product_name": {
+          "type": "string",
+          "description": "The product name to search for."
+        }
+      },
+      "required": ["product_name"]
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_feed_exclusion_reason",
+    "description": "Why a specific product is not in the Google feed: opted out, blocklisted, draft, unpublished, or feed validation issues. Look up by product name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "product_name": {
+          "type": "string",
+          "description": "The product name to search for."
+        }
+      },
+      "required": ["product_name"]
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_google_sync_activity",
+    "description": "When products were last pushed to Google Merchant Center and whether it succeeded, completed with failures, or is in progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_shopify_sync_activity",
+    "description": "When the app last read product data from Shopify and whether that sync succeeded, failed, or is in progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_connected_account",
+    "description": "The connected Google Merchant Center account name and ID, and whether the connection is active, needs reauthorization, or is disconnected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_setup_guide",
+    "description": "A link and summary for the Nabu for Google Feed onboarding and setup guide, with the store's current setup progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]
