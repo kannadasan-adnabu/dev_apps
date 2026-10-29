@@ -11,7 +11,7 @@ extensions_summary = "Check Google Shopping feed status from Nabu for Google Fee
 
 [access_scopes]
 scopes = "read_products,read_orders,read_marketing_events,write_marketing_events,read_translations,read_locales,read_markets,read_shipping,read_legal_policies,read_publications,read_inventory"
-optional_scopes = ["read_metaobjects", "read_metaobject_definitions"]
+optional_scopes = ["read_metaobjects", "read_metaobject_definitions", "read_locations"]
 
 [build]
 automatically_update_urls_on_dev = true

@@ -42,7 +42,7 @@ This block can be used on 404 pages or globally with conditional logic
         }
 
         const redirectConfig = {
-            mappings: {{ shop.metafields.adnabu_redirect_manager_embed.configuration.value | json }},
+            mappings: {{ shop.metafields.adnabu_redirect_manager_embed_local.configuration.value | json }},
             apiEndpoint: "https://kannadasan.adnabu.net/local-development/redirect-event-relay",
             shopId: "{{ shop.permanent_domain }}",
             debugMode: safeStorageGet('localStorage', storageKeyMap.debugMode) || false,
