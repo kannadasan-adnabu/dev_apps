@@ -4,16 +4,29 @@
 // (attached automatically because the backend is on the app's auth domain),
 // reads the shop's already-synced data, and returns an MCP tool result.
 
-const BASE_URL = "https://kannadasan.adnabu.net/sidekick";
-const APP_ID = "GOOGLE_FEED";
+const BASE_URL = "https://kannadasan.adnabu.net/sidekick/google-feed";
 
+// A failed call still returns an MCP result, so Sidekick can tell the merchant instead of failing silently
 async function callTool(name, args) {
-  const response = await fetch(`${BASE_URL}/${name}?app_id=${APP_ID}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args || {}),
-  });
-  return response.json();
+  try {
+    const response = await fetch(`${BASE_URL}/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args || {}),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: `Nabu for Google Feed could not answer right now (${error.message}). Please try again later.`,
+        },
+      ],
+    };
+  }
 }
 
 const TOOLS = [

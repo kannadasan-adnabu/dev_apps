@@ -1,0 +1,14 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "Google Ads Pixel by Nabu Sidekick tools"
+description = "Read-only tools for Google Ads Pixel by Nabu App. Answers questions about Google Ads conversion tracking: the number of pixels and their names and IDs, the settings of a specific pixel, which pixels have enhanced conversions enabled, the connected Google account, post-purchase tracking, whether tax is included in sales value, last 30 days purchases, sales value and cart dropouts, and how to set up the app."
+handle = "sidekick-tools"
+uid = "ba254948-acef-445a-aea1-0d470a9170fbd155d53f"
+type = "ui_extension"
+
+[[extensions.targeting]]
+module = "./src/index.js"
+target = "admin.app.tools.data"
+tools = "./tools.json"
+instructions = "./instructions.md"

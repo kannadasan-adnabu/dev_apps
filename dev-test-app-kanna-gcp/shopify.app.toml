@@ -6,6 +6,9 @@ application_url = "https://kannadasan.adnabu.net/shopify/conversion/pixel"
 embedded = true
 handle = "dev-test-app-kannadasan-gcp"
 
+[sidekick]
+extensions_summary = "Check Google Ads conversion tracking in Google Ads Pixel by Nabu: how many pixels are set up with their names and IDs; one pixel's enabled events and enhanced conversions; which pixels have enhanced conversions on; the connected Google account and whether the connection works; whether post-purchase tracking is on and tax is included in sales value; last 30 days purchases, sales value and cart dropouts; and the setup guide."
+
 [access_scopes]
 scopes = "read_orders,read_themes,write_pixels,read_customer_events"
 optional_scopes = ["read_customers"]

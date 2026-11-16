@@ -1,0 +1,82 @@
+[
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_pixels",
+    "description": "List the Google Ads pixels set up in Google Ads Pixel by Nabu App: the total number of pixels, how many are active, and the name and ID of each pixel. Use this when a merchant asks how many pixels they have, which pixels are set up, or what their pixel IDs are.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_pixel_details",
+    "description": "Show the details of one Google Ads pixel in the Google Ads Pixel by Nabu App, looked up by pixel name or ID: its status, the Google Ads account it sends data to, which events are enabled (purchase, begin checkout, add to cart, page view), and whether enhanced conversions is on for purchase and begin checkout. Use this when a merchant asks about a specific pixel, which events a pixel tracks, or whether enhanced conversions is turned on.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pixel": {
+          "type": "string",
+          "description": "The pixel's name or ID, e.g. \"Acme Store <> AdNabu\", \"AW-123456789\" or \"123456789\". Case is ignored, and the AW- prefix is optional."
+        }
+      },
+      "required": [
+        "pixel"
+      ]
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_enhanced_conversions_setting",
+    "description": "Show which Google Ads pixels in the Google Ads Pixel by Nabu App have enhanced conversions enabled and which do not. Use this when a merchant asks whether enhanced conversions is enabled, or which pixels have it turned on or off.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_connected_account",
+    "description": "Show the Google account connected to the Google Ads Pixel by Nabu App and whether the connection is still working. Use this when a merchant asks which Google account is connected, whether their Google connection is active, or why Google Ads data is not updating in the app.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_post_purchase_setting",
+    "description": "Show whether post-purchase tracking is enabled in the Google Ads Pixel by Nabu App. Use this when a merchant asks whether purchases on the post-purchase page are tracked, or whether post-purchase tracking is turned on.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_sales_tax_setting",
+    "description": "Show whether the Google Ads Pixel by Nabu App includes tax charges in the sales value sent to Google Ads. Use this when a merchant asks whether their conversion value includes tax, or why the sales value in Google Ads is different from their order totals.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_analytics",
+    "description": "Show conversion analytics tracked by the Google Ads Pixel by Nabu App for the last 30 days: total purchases, total sales value, and cart dropouts, with the change compared to the previous 30 days. Use this when a merchant asks how many purchases were tracked, what sales value was sent to Google, how many cart dropouts there were, or how their tracking numbers have changed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "$schema": "https://extensions.shopifycdn.com/shopifycloud/schemas/v1/tool.json",
+    "name": "get_setup_guide",
+    "description": "Return the setup guide for the Google Ads Pixel by Nabu App, covering how to connect a Google account. Use this when a merchant asks how to get started with the app.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]
